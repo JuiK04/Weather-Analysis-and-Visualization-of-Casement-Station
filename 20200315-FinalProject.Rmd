@@ -1,0 +1,432 @@
+---
+title: "20200315-R"
+author: "Jui Koratkar"
+date: "12/12/2020"
+output: pdf_document
+---
+
+
+The dataset is downloaded from the website *"https://www.met.ie//climate/available-data/daily-data"* for the **Casement** station from the year **1964 to 2020**.The dataset contains following columns:\
+year -> Year\
+month -> Month\
+rain ->  Precipitation Amount (mm)\
+maxtp -> Maximum Air Temperature (C)\
+mintp -> Minimum Air Temperature (C)\
+mnmax ->  Mean Maximum Temperature (C)\
+mnmin ->  Mean Minimum Temperature (C)\
+gmin -> Grass Minimum Temperature (C)\
+wdsp -> Mean Wind Speed (knot)\
+maxgt ->  Highest Gust (knot)\
+sun -> Sunshine duration (hours)\
+The new libraries used in the project are as follows :\
+1) **plotly** : plotly is one of the finest data visualization tools available built on the top of visualization library javascript, HTML and css.One can choose to create interactive data visualizations online or use the libraries that plotly offers to create these visualizations in the language/ tool of choice. It is compatible with a number of languages/ tools: R, Python, MATLAB, Perl, Julia, Arduino.\
+I have created multiple interactive plots using plotly in this project.\
+2)**RColorBrewer** : It is an R packages that uses the work from *http://colorbrewer2.org/* to help to choose sensible color schemes for figures in R\
+3)**GGally** : GGally extends ggplot2 by adding several functions to reduce the complexity of combining geoms with transformed data. Some of these functions include a pairwise plot matrix, a scatterplot plot matrix, a parallel coordinates plot, a survival plot, and several functions to plot networks.\
+I have used **ggcorr()** and **ggpairs()** functions in order to observer the relationship between different features.\
+4)**Virdis** : Used to add various colors to the plot.\
+5)**Mice**
+
+```{r importLib,warning=FALSE,message=FALSE}
+
+library(ggplot2)
+library(dplyr)
+library(plotly)         # Use of new package which was not used earlier
+library(gridExtra)
+library(RColorBrewer)   # Use of new package which was not used earlier
+library(GGally)         # Use of new package which was not used earlier
+library(viridis)        # Use of new package which was not used earlier
+library(VIM)
+library(mice)
+library(moments)
+
+```
+
+Loading the dataset into and saving it as a dataframe in casementStn.\
+```{r loadingData, warning=FALSE,message=FALSE}
+# Skip=19 will neglect the first 19 lines
+
+casementStn <- read.csv(file="C:\\Desktop\\DataSets\\caseMent_data.csv", header=TRUE,skip=19)
+
+```
+# **Data Cleaning**\
+
+A function called  **overViewOfTheData** is created for checking the dimensions,column names,structure and first 5 rows of the data.
+
+```{r overViewOfData, warning=FALSE}
+
+overViewOfTheData <- function (data){
+
+   invisible(print("Dimension of the data :" ))
+   invisible(print(dim(data)))
+   invisible (print("column names are :"))
+   invisible(print(colnames(data)))
+   invisible(print("Structure of the data"))
+   invisible(print(str(data)))
+   invisible(print("first 5 rows of the data"))
+   invisible(print(head(data,5)))
+
+}
+
+overViewOfTheData(casementStn)
+
+
+
+```
+The columns **Year** and **Month** are converted into categorical factors.\
+```{r typeCon, warning=FALSE}
+casementStn$month <- factor(casementStn$month,levels=1:12, labels=month.name)
+casementStn$year <- factor(casementStn$year)
+str(casementStn)
+```
+# Missing Value Visualization:\
+Two types of missing data exist:\
+MCAR: totally absent at random. In the case of missing data, this is the alternative scenario.\
+MNAR: not randomly absent. It is a more serious problem not to lose random data, and in this situation it might be prudent to further review the method of data collection and try to understand why the information is missing.\
+## **mice package**\
+By making multiple imputations, the mice kit imputes for multivariate missing data. The Mice feature detects variables with missing items automatically. Then by default, the missing information is imputed using the PMM process.\
+Predictive Mean Matching (PMM) is a regression-like semi-parametric imputation, except that the value is randomly filled from an observation between the observed donor values whose regression-predicted values are nearest to the regression-predicted value of the simulated regression model for the missing value.By default, five imputations for all missing values are executed.\
+**Multivariate Imputation By Chained Equations**  stands for the mice. All five imputations are based on the fully conditional specification process, where incomplete variables are imputed using a separate model.Continuous, binary, ordered factor and unordered factor data can be imputed by the mice functions.The package is known for maintaining consistency among passive imputation imputations.
+Methods used for imputation, rather than PMM, are:\
+logreg(Logistic Regression) - For Binary VariableS\
+Proportional odds model - (ordered levels >= 2)\
+polyreg(Bayesian polytomous regression) - (unordered levels>= 2)\
+
+
+```{r missingValueRemoval, warning=FALSE}
+missingVal <- function(x){sum(is.na(x))/length(x)*100}
+
+apply(casementStn,2,missingVal)
+
+```
+From above summary, we can observe that **wdsp and maxgt contains 5.497771%* of missing data. As of now we will not the drop the features.We will further analyze the missing values present by using **md.pattern()** function provided by mice.\
+
+```{r}
+md.pattern(casementStn)
+
+```
+The output tells us that 636 samples are complete, 37 samples miss wdsp and maxgt measurement, so overall there are 74 data points in the data which are missing.\
+A perhaps more helpful visual representation can be obtained using the VIM package as follows\
+```{r}
+aggr_plot <- aggr(casementStn, col=c('blue','red'), numbers=TRUE, sortVars=TRUE, labels=names(casementStn), cex.axis=.7, gap=3, ylab=c("Histogram of missing data","Pattern"))
+```
+
+The plot helps us understanding that almost 94.5% of the samples are not missing any information, 5.5% are missing values in the wdsp and maxgt columns.\
+**Imputing the missing data**
+The mice() function is used for imputation of missing values.
+```{r imputeNA}
+tempData <- mice(casementStn,m=5,meth='pmm',seed=100)
+summary(tempData)
+```
+In mice() function ,\
+m=5 refers to the number of imputed datasets.\
+Five is the default value.\
+meth='pmm' refers to the imputation method.\
+In this case, we use predictive mean matching as the form of imputation. It is possible to use other imputation methods.\
+If we want to verify the imputed data, such as for the maxgt or wdsp variable, we can verify using following code :\
+```{r}
+head(tempData$imp$wdsp,5)
+head(tempData$imp$maxgt,5)
+
+```
+The missing values have been replaced with the imputed values in the first of the five datasets.Now we retrieve our data back by using complete() function as follows.\
+```{r}
+comp_caseMent <- complete(tempData,1)
+head(comp_caseMent,5)
+```
+**Inspecting the distribution of original and imputed data**
+```{r}
+densityplot(tempData)
+```
+The density of the imputed data is displayed in magenta for each imputed dataset, while the density is shown in blue for the observed data.What we like to see is that the outline of the (imputed) magenta points suits the shape of the blue ones (observed). The matching form shows us that plausible values' are actually the imputed values.\ 
+The stripplot() function that shows the variables' distributions as individual points can be used to obtain another useful visual take on the distributions.\
+```{r}
+stripplot(tempData, pch = 20, cex = 1)
+```
+# Exploratory Data Analysis :\newline
+### **task1 : To find out mean of precipitation amount, mean of max temp , mean wind speed and mean sunshine duration per year from 1964 to 2020 and maximum of mean for above 4 parameters both visually and through code.**\newline
+Initially the data is grouped by **Year** with the help of ***group_by()*** function ,then calculated mean for **precipitation amount, mean max temp , mean wind speed and mean sunshine duration** using ***summarise()*** function from **dplyr** package.\
+By applying slicing MAximum and minimum values for the above parameters are displayed , statistically.\
+
+```{r, warning=FALSE,message=FALSE}
+avgVal <- comp_caseMent %>%
+          group_by(year) %>%
+          summarise(avg_rain_perYear = mean(rain),
+                      avg_wind_PerYear = mean(wdsp),
+                      avg_MaxTemp_PerYear = mean(mnmax),
+                      avg_sunshineDur = mean(sun))
+
+
+avgVal[which.max(avgVal$avg_rain_perYear),][1:2] #Maximum avg rain per year:
+avgVal[which.min(avgVal$avg_rain_perYear),][1:2]  #Minimum avg rain per year
+avgVal[which.max(avgVal$avg_wind_PerYear),][c(1,3)] #Maximum avg wind rain per year
+avgVal[which.min(avgVal$avg_wind_PerYear),][c(1,3)] #Minimum avg wind per year
+avgVal[which.max(avgVal$avg_MaxTemp_PerYear),][c(1,4)] #Maximum avg temp per year
+avgVal[which.min(avgVal$avg_MaxTemp_PerYear),][c(1,4)] #Minimum avg temp per year
+avgVal[which.max(avgVal$avg_sunshineDur),][c(1,5)] #Maximum avg sun duration per year
+avgVal[which.min(avgVal$avg_sunshineDur),][c(1,5)] #Minimum avg sun  duration per year
+
+
+
+           
+
+```
+The above task is performed by using plot so that we can observe the values visually.\
+
+```{r}
+# Make plots.
+plotAvgPerYear <- function(d){
+  mycols <- c('red', 'orange','yellow','pink')
+  plot_list = list()
+  var_list = combn(names(d)[1:5], 2, simplify=FALSE)
+  for(i in 1:4){
+    graphs = ggplot(d,aes_string(x=var_list[[i]][1], y=var_list[[i]][2]))+
+    geom_bar(stat = 'identity', color = mycols[i])+
+    theme(axis.text.x = element_text(angle = 110)) 
+    plot_list[[i]] = graphs
+    }
+  return(plot_list)
+}
+
+multiPlots <- plotAvgPerYear(avgVal)
+multiPlots
+
+```
+**Analysis :**\
+Initially the data is grouped based on years and then average precipitation amount , average wind speed, average of mean maximum temperature and average of sunshine duration is calculated and plotted with the help of bar chart.Based on calculation and visualization , observation are as follows:\
+1) Maximum average precipitation amount 84.566671 mm ( rain in mm ) was observed in the year 2002\
+2) Minimum average precipitation amount 47.75833mm(rain in mm) was observed in the year 1975\
+3) Maximum average wind speed 13.45knots was observed in the year 1990\
+4) Minimum average wind speed 0 knots was observed in the year 1964(8.03 in 2010)\
+5) Maximum average Maximum Temperature 14.43C was observed in the year 2006\
+6) Minimum average Maximum Temperature 8.8C was observed in the year 2020\
+7) Maximum average sunshine duration 131.37 hours was observed in the year 2018\
+8) Minimum average sunshine duration 65.6 hours was observed in the year 2020\
+
+##  **task 2 : Which months in which years had the highest gust, grass mean temperature and mean maximum temperature?**\
+
+```{r}
+
+comp_caseMent[which.max(comp_caseMent$maxgt),c("month",'year','maxgt')]
+comp_caseMent[which.max(comp_caseMent$gmin),c("month",'year','gmin')]
+comp_caseMent[which.max(comp_caseMent$mnmax),c("month",'year','mnmax')]
+
+```
+From above analysis we can say that Casement station had experienced highest gust of 82 knots in December 1997 , highest Minimum grass temperature of 8.2c in July 1991, highest mean maximum temperature of 23.5c in August 1995.\
+
+## task 3 : Visual Represntation of the Temperature paramater over the years : heat map of maximum average temperature from 1964 - 2020.\
+
+```{r}
+ggplot(data=comp_caseMent, aes(x=year,y=month)) + 
+  geom_tile(aes(fill = mnmax),colour = "white") + 
+  scale_fill_gradientn(colours=rev(brewer.pal(10,'Spectral'))) + 
+  theme(legend.title=element_blank(),axis.title.y=element_blank(),axis.title.x=element_blank(),legend.position="top",axis.text.x = element_text(angle = 110)) + ggtitle("Maximum Temperature")
+```
+From above map , we can observe that in the month of December and January, the temperature range is 5c-10c, but if we observe, for the year 2010 in the month December the temperature was below 5c(indicated by dark blue color), Also for the year 2016 in the month of Deceber, the temperature went above 10c ( indicated by yellow color). We can consider such points as outliers.\
+
+## task 4:  Boxplot of Minimum average temperature for every month from 1964-2020( grouped by month and years )
+
+```{r}
+meanmonth<- aggregate(comp_caseMent$mnmin, list(comp_caseMent$year, comp_caseMent$month), mean)
+ggplot(meanmonth,aes(x=Group.2,y=x,color=x)) +
+scale_color_gradientn(colours=rev(brewer.pal(10,'Spectral'))) +
+geom_boxplot(colour='black',size=.4,alpha=.5) +
+geom_jitter(shape=16,width=.2,size=1) +
+theme(legend.title=element_blank(),legend.position='top',axis.text.x = element_text(angle=45, hjust=1)) +
+ggtitle("Minimum Temperature (monthly average) in CaseMent") +
+xlab('') + ylab('temperature (Celsius)')
+
+
+```
+Above boxplot shows the comparison between different months in case of Minimum Temperature in Casement station.The outliers are observed in the months of January, May, September and December which means data point that is located outside the whiskers of the box plot which is an indication of the outlying temperatures are distant from the rest of the data. Also if we observe we can say, the data point in the month of January , November and February are skewed to the right, wheres the temperature in the month of March is left skewed.We will further check the skewness of the data by plotting histogram and checking the skewness measurement as below.
+
+```{r}
+t = subset(meanmonth,Group.2 == "January") #subsetting the data for the January month and plotting Histogram
+ggplot(t,aes(x=x, color="green"))+
+                    geom_histogram(bins =15,color="darkblue", fill = "lightblue",linetype="dashed")+
+                    theme_bw()+                                                                         
+                    labs(title="Histogram")+
+                    xlab("January")+
+                    ylab("Count")
+skewness(t$x)
+
+```
+Skewness\
+Intuitively, the skewness is a measure of symmetry. As a rule, negative skewness indicates that the mean of the data values is less than the median, and the data distribution is left-skewed. Positive skewness would indicate that the mean of the data values is larger than the median, and the data distribution is right-skewed.The skewness of eruption duration is -0.8182715. It indicates that the temperature distribution in January month is skewed towards the left.
+Boxplot of precipitation amount grouped by months and years
+
+```{r,}
+t = subset(meanmonth,Group.2 == "March") #subsetting the data for the March month and plotting Histogram
+ggplot(t,aes(x=x, color="green"))+
+                    geom_histogram(bins =15,color="darkblue", fill = "lightblue",linetype="dashed")+
+                    theme_bw()+                                                                         
+                    labs(title="Histogram")+
+                    xlab("January")+
+                    ylab("Count")
+skewness(t$x)
+
+
+
+```
+The skewness of eruption duration is 0.3029656. It indicates that the temperature distribution in March month is slightly skewed towards the right.
+
+
+## Task :5 : based on above observation we will divide 12 months into 4 seasons for better analysis as follows :
+winter : December , January, February
+Summer : March, April, May
+Spring : June, July, August
+Autumn : September, October , November
+
+
+```{r,message=FALSE,warning=FALSE}
+comp_caseMent$season <- factor(
+  comp_caseMent$month,levels=month.name,
+  labels=c(
+    'Winter','Spring','Spring','Spring','Summer','Summer',
+    'Summer','Autumn','Autumn','Autumn','Winter','Winter'))
+str(comp_caseMent$season)
+
+```
+
+The classes *CasementWeather* and *data.frame* are assigned to the object *comp_caseMent*.
+
+```{r}
+class(comp_caseMent) = c('CasementWeather','data.frame')
+```
+
+## Task: 6 Calculation of Mean, Std deviation, Minimum and Maximum based on the season
+```{r}
+summary.CasementWeather<- function(x)
+{
+  meansumary=aggregate(cbind(rain,maxtp,mintp,maxgt,meant,gmin,sun)~season,data=x,mean)
+  print("MEAN:",quote=F)
+  print(meansumary)
+  sdsummary=aggregate(cbind(rain,maxtp,mintp,maxgt,meant,gmin,sun)~season,data=x,sd)
+  print("STANDARD DEVIATION:",quote=F)
+  print(sdsummary)  
+  minsumary=aggregate(cbind(rain,maxtp,mintp,maxgt,meant,gmin,sun)~season,data=x,min)
+  print("MINIMUM:",quote=F)
+  print(minsumary)
+  maxsumary=aggregate(cbind(rain,maxtp,mintp,maxgt,meant,gmin,sun)~season,data=x,max)
+  print("MAXIMUM:",quote=F)
+  print(maxsumary)
+}  
+# Calling the FUnction in the Class obejct by passing arguement
+summary.CasementWeather(comp_caseMent)
+```
+
+## **Task 7 : Find is there any relation between variables**
+Initially, the data is splitted based on corelation and then calculated corelation measure between variables.
+We can observe that,
+The variables Mean Minimum Temperature, Mean Maximum temperature,Minimum Air Temperature, Maximum air temperature,Mean Air temperature and grass minimum temperature are strongly positively co-related with each other which means as one parameter increases, another increases too. ggcorr() is also used to understand the relationship between variables in a visual way.
+```{r, warning=FALSE,message=FALSE}
+by(comp_caseMent[,3:12], comp_caseMent$season,cor)
+ggcorr(comp_caseMent[,3:10],label = TRUE, label_alpha = TRUE)
+
+
+```
+## **Relationship plot bewteen sun and temperature parameters.**
+```{r}
+
+plot.CasementWeather <-function(dt)
+{
+  p1 <- ggplot(dt ,aes(x =sun, y =mintp, color = season)) +
+    geom_point(position = "jitter") +
+    labs(y = "Min Temp", x = "Sun duration", color = "Species")+
+    ggtitle("Min Air Temp Vs Sun duration")
+  
+  p2 <-  ggplot(dt ,aes(x =sun, y =maxtp, color = season)) +
+    geom_point(position = "jitter") +
+    labs(y = "Max Temp", x = "Sun duration", color = "Species")+
+    ggtitle("Sun duration vs Max Air temp")
+  
+  p3 <-  ggplot(dt ,aes(x =sun, y =mnmax, color = season)) +
+    geom_point(position = "jitter") +
+    labs(y = "mean max Temp", x = "Sun duration", color = "Species")+
+    ggtitle("Mean Max Temp Vs sun duration")
+  
+  p4 <-  ggplot(dt ,aes(x =sun, y =mnmin, color = season)) +
+    geom_point(position = "jitter") +
+    labs(y = "mean min Temp", x = "Sun duration", color = "Species")+
+    ggtitle("Mean min Temp Vs sun duration")
+  return(grid.arrange(p1,p2,p3,p3,nrow=2,ncol=2))
+  
+  
+}
+
+plot.CasementWeather(comp_caseMent)
+```
+From above plot we can say there is strong co-relation between sun and temperatures. For the summer and Autumn , the sun duration higher as well as the corresponding temperatures.\
+
+```{r}
+
+
+grp <- group_by(comp_caseMent,comp_caseMent$year)
+grp %>%
+     ggplot(mapping = aes(x = year, y =  gmin)) +
+         geom_jitter(mapping = aes(color = season)) +
+         scale_color_viridis(discrete = T) +
+         theme(axis.text.x = element_text(angle = 110, vjust = 0.5, hjust=1))+
+         ggtitle("Minimum grass Temp vs years")
+        
+
+```
+Grass temperature is observed to be greater in Summer and Autumn whereas in Winter and Spring the temperature decreases.\
+
+
+## **Task :  8**
+A function 'func' is created, with arguemnts as data, byMonth and bySeason. If byMonth is passed as TRUE it will plot the box plot of sun duration by Months and if bySeason arguments is passed as TRUE, then it will plot the boxplot of Sun duration by Seasons.In case, FALSE is passed for both the arguments, it asks to select any one arguemnt.
+
+
+## Boxplot of Sun duration by season and by months 
+
+```{r}
+
+
+func = function(d,byMonth=NULL,bySeason=NULL){
+  
+  if(is.null(byMonth)) {
+    byMonth=1
+   }
+  
+  if(is.null(bySeason)) { 
+    bySeason=1
+  }
+  
+  if(byMonth){
+  grpbyMonth <- group_by(d,d$month)
+  p1 = ggplot(grpbyMonth,aes(month,sun,fill=month))+geom_boxplot() +
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  labs(title='Arctic extention distribution with months')
+  return(p1)
+  }
+  
+  if(bySeason){
+  grpBySeason <- group_by(d,d$season)
+  p2 = ggplot(grpBySeason,aes(season,sun,fill=season))+geom_boxplot() +
+  theme(axis.text.x = element_text(angle=45, hjust=1))+
+  labs(title='Arctic extention distribution with months')
+  return(p2)
+  }
+  
+  if((bySeason == 0) && (byMonth==0)){
+    
+    print("Please select either byMonth or bySeason to display a plot")
+  }
+   
+}
+
+```
+
+
+```{r}
+func(comp_caseMent,0,0)
+```
+
+```{r}
+func(comp_caseMent,1,0)
+```
+
+```{r}
+func(comp_caseMent,0,1)
+```
